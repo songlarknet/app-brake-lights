@@ -1,0 +1,38 @@
+
+&i2c0 {
+	// For accel + gyro at 100Hz, we need around 140KHz.
+	// Standard (100KHz) won't do it, but fast (400KHz) should.
+	// clock-frequency = <I2C_BITRATE_FAST>;
+
+	mpu6050@68 {
+		compatible = "invensense,mpu6050";
+		reg = <0x68>;
+		status = "okay";
+		int-gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/ {
+	leds {
+		compatible = "gpio-leds";
+		out_brake_relay0: relay0 {
+			gpios = <&gpio0 16 GPIO_ACTIVE_HIGH>;
+		};
+		out_brake_led0: led0 {
+			gpios = <&gpio0 17 GPIO_ACTIVE_HIGH>;
+		};
+		out_ok_led0: led1 {
+			gpios = <&gpio0 18 GPIO_ACTIVE_HIGH>;
+		};
+		out_nok_led0: led2 {
+			gpios = <&gpio0 19 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	aliases {
+		out-brake-relay = &out_brake_relay0;
+		out-brake-led   = &out_brake_led0;
+		out-ok-led      = &out_ok_led0;
+		out-nok-led     = &out_nok_led0;
+	};
+};
