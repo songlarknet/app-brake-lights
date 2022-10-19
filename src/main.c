@@ -3,6 +3,8 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 
+#include "lackc/brake_lights.h"
+
 #define SLEEP_TIME_MS   10
 
 // static const struct gpio_dt_spec in_imu_interrupt =
@@ -28,10 +30,30 @@ typedef struct imu {
 
 static imu_t latest_imu;
 
+static Top$Brakes$state brakes_state;
+
+static void lackc_init() {
+	Top$Brakes$reset(&brakes_state);
+}
+
+static void lackc_step(imu_t imu) {
+	Top$Brakes$step$out out;
+	Top$Brakes$step(&brakes_state,
+		imu.clock,
+		imu.accel[0], imu.accel[1], imu.accel[2],
+		imu.gyro[0], imu.gyro[1], imu.gyro[2], imu.gyro[3],
+		&out);
+
+	gpio_pin_set_dt(&out_brake_led, out.light);
+	gpio_pin_set_dt(&out_ok_led,    out.ok);
+	gpio_pin_set_dt(&out_nok_led,   out.nok_stuck);
+}
+
 static void process_imu()
 {
 	struct sensor_value accel[3];
 	struct sensor_value gyro[3];
+	// TODO is this necessarily ensuring fresh data?
 	int nok = sensor_sample_fetch(dev_imu);
 	if (!nok) {
 		nok = sensor_channel_get(dev_imu, SENSOR_CHAN_ACCEL_XYZ, accel);
@@ -44,7 +66,7 @@ static void process_imu()
 		latest_imu.accel[0] = sensor_value_to_double(&accel[0]);
 		latest_imu.accel[1] = sensor_value_to_double(&accel[1]);
 		latest_imu.accel[2] = sensor_value_to_double(&accel[2]);
-		// TODO I want to convert the gyro to a quaternion so the control system can apply it with linear
+		// TODO I want to convert the gyro to a quaternion so the control system can apply it with linear ops
 		latest_imu.gyro[0] = sensor_value_to_double(&gyro[0]);
 		latest_imu.gyro[1] = sensor_value_to_double(&gyro[1]);
 		latest_imu.gyro[2] = sensor_value_to_double(&gyro[2]);
@@ -75,20 +97,19 @@ void main(void)
 		return;
 	}
 
+	lackc_init();
+
 	uint16_t i = 0;
 	while (1) {
 		latest_imu.clock = false;
 		process_imu();
+		lackc_step(latest_imu);
 
-		i++;
-		if (i % 100 == 0)
-			gpio_pin_toggle_dt(&out_ok_led);
 		// gpio_pin_toggle_dt(&out_nok_led);
+		// gpio_pin_toggle_dt(&out_ok_led);
+		// gpio_pin_toggle_dt(&out_brake_led);
 
-		gpio_pin_set_dt(&out_nok_led, latest_imu.accel[1] > 1);
-
-		gpio_pin_set_dt(&out_brake_led, latest_imu.accel[2] > 1);
-
+		// TODO subtract time used by work or use real timer
 		k_msleep(SLEEP_TIME_MS);
 	}
 }
