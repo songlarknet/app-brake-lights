@@ -44,13 +44,16 @@ static void lackc_step(imu_t imu) {
 		imu.gyro[0], imu.gyro[1], imu.gyro[2], imu.gyro[3],
 		&out);
 
+#define RELAY_EN
+#ifdef RELAY_EN
+	gpio_pin_set_dt(&out_brake_relay, out.light);
+#endif
 	gpio_pin_set_dt(&out_brake_led, out.light);
 	gpio_pin_set_dt(&out_ok_led,    out.ok);
 	gpio_pin_set_dt(&out_nok_led,   out.nok_stuck);
 }
 
-static void process_imu()
-{
+static void process_imu() {
 	struct sensor_value accel[3];
 	struct sensor_value gyro[3];
 	// TODO is this necessarily ensuring fresh data?
@@ -76,40 +79,46 @@ static void process_imu()
 	}
 }
 
-void main(void)
-{
+
+static void main_timer_work_step(struct k_work *work) {
+	lackc_step(latest_imu);
+	process_imu();
+}
+
+K_WORK_DEFINE(main_timer_work, main_timer_work_step);
+
+static void main_timer_step(struct k_timer *timer) {
+	k_work_submit(&main_timer_work);
+}
+
+K_TIMER_DEFINE(main_timer, main_timer_step, NULL);
+
+
+void main(void) {
 	int ret;
 
 	if (!device_is_ready(out_brake_relay.port)) {
-		return;
-	}
-	if (!device_is_ready(dev_imu)) {
 		return;
 	}
 
 	ret =
 		// gpio_pin_configure_dt(&in_imu_interrupt, GPIO_INPUT) ||
 		gpio_pin_configure_dt(&out_brake_relay, GPIO_OUTPUT_INACTIVE) ||
-		gpio_pin_configure_dt(&out_brake_led, GPIO_OUTPUT_INACTIVE) ||
-		gpio_pin_configure_dt(&out_ok_led, GPIO_OUTPUT_INACTIVE) ||
-		gpio_pin_configure_dt(&out_nok_led, GPIO_OUTPUT_INACTIVE);
+		gpio_pin_configure_dt(&out_brake_led, GPIO_OUTPUT_ACTIVE) ||
+		gpio_pin_configure_dt(&out_ok_led, GPIO_OUTPUT_ACTIVE) ||
+		gpio_pin_configure_dt(&out_nok_led, GPIO_OUTPUT_ACTIVE);
 	if (ret < 0) {
 		return;
 	}
 
-	lackc_init();
+	gpio_pin_set_dt(&out_nok_led, true);
 
-	uint16_t i = 0;
-	while (1) {
-		latest_imu.clock = false;
-		process_imu();
-		lackc_step(latest_imu);
-
-		// gpio_pin_toggle_dt(&out_nok_led);
-		// gpio_pin_toggle_dt(&out_ok_led);
-		// gpio_pin_toggle_dt(&out_brake_led);
-
-		// TODO subtract time used by work or use real timer
-		k_msleep(SLEEP_TIME_MS);
+	if (!device_is_ready(dev_imu)) {
+		return;
 	}
+
+	lackc_init();
+	latest_imu.clock = false;
+
+	k_timer_start(&main_timer, K_MSEC(10), K_MSEC(10));
 }
